@@ -1,0 +1,76 @@
+<!doctype html>
+<meta charset="utf-8">
+<input id="file" type="file" accept="image/png">
+<pre id="out" style="white-space:pre-wrap; font-family:monospace;"></pre>
+<script>
+const fileInput = document.getElementById('file');
+const out = document.getElementById('out');
+
+function toFixed6(n){ return (n/255).toFixed(6); }
+
+fileInput.addEventListener('change', () => {
+  const f = fileInput.files[0];
+  if (!f) return;
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement('canvas');
+    c.width = 16; c.height = 16;
+    const ctx = c.getContext('2d', { alpha: true });
+    const tmp = document.createElement('canvas');
+    tmp.width = img.width; tmp.height = img.height;
+    const tctx = tmp.getContext('2d', { alpha: true });
+    tctx.drawImage(img, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(tmp, 0, 0, tmp.width, tmp.height, 0, 0, 16, 16);
+    const d = ctx.getImageData(0,0,16,16).data;
+
+    let pixelLines = [];
+    for(let y=0;y<16;y++){
+      for(let x=0;x<16;x++){
+        let i = (y*16 + x)*4;
+        let r=d[i], g=d[i+1], b=d[i+2], a=d[i+3];
+        if(a < 255){
+          let af = a/255;
+          r = Math.round(r*af);
+          g = Math.round(g*af);
+          b = Math.round(b*af);
+        }
+        let comma = (y*16 + x) < 255 ? "," : "";
+        pixelLines.push("  vec3(" + toFixed6(r) + ", " + toFixed6(g) + ", " + toFixed6(b) + ")" + comma);
+      }
+    }
+
+    const pixelsBlock = "const vec3 PIXELS[256] = vec3[256](\n" + pixelLines.join("\n") + "\n);";
+
+    const shader = [
+      "#version 300 es",
+      "precision mediump float;",
+      "precision mediump int;",
+      "out vec4 fragColor;",
+      "uniform vec2 resolution;",
+      pixelsBlock,
+      "void main(){",
+      "  vec2 uv=(gl_FragCoord.xy-vec2(0.5))/resolution;",
+      "  int ix=int(clamp(floor(uv.x*16.0),0.0,15.0));",
+      "  int iy=int(clamp(floor(uv.y*16.0),0.0,15.0));",
+      "  int row_top=15-iy;",
+      "  int idx=row_top*16+ix;",
+      "  vec3 col=PIXELS[idx];",
+      "  fragColor=vec4(col,1.0);",
+      "}"
+    ].join("\n");
+
+    out.textContent = shader;
+
+    const a = document.createElement('a');
+    a.textContent = "Download shader (.frag)";
+    a.href = URL.createObjectURL(new Blob([shader], {type: 'text/plain'}));
+    a.download = f.name.replace(/\.[^.]+$/, '') + "_16x16.frag";
+    if(a.nextSibling) a.parentNode.removeChild(a.nextSibling);
+    out.parentNode.insertBefore(a, out.nextSibling);
+  };
+  const reader = new FileReader();
+  reader.onload = e => img.src = e.target.result;
+  reader.readAsDataURL(f);
+});
+</script>
